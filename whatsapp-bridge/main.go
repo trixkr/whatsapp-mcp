@@ -3023,6 +3023,27 @@ func participantesPorNome(store *MessageStore, groupInfo *types.GroupInfo, group
 	return saida
 }
 
+// youAreAdminIn reports whether the bridge's own account is an admin of this
+// group, comparing all three forms a participant can come back as (JID,
+// PhoneNumber, LID — same trio participanteDoGrupo already juggles) against
+// our own JID, normalized with ToNonAD so a device suffix never breaks the
+// match. This stays a plain bool specifically so callers never see anyone's
+// raw JID here — the redaction a few lines up (D3/D6) still holds.
+func youAreAdminIn(client *whatsmeow.Client, groupInfo *types.GroupInfo) bool {
+	if client == nil || client.Store == nil || client.Store.ID == nil {
+		return false
+	}
+	ownJID := client.Store.ID.ToNonAD().String()
+	for _, gp := range groupInfo.Participants {
+		for _, candidate := range []types.JID{gp.JID, gp.PhoneNumber, gp.LID} {
+			if !candidate.IsEmpty() && candidate.ToNonAD().String() == ownJID {
+				return gp.IsAdmin
+			}
+		}
+	}
+	return false
+}
+
 // contatoSemNome e o marcador que a superficie de leitura ja usa quando o nome
 // nao resolve. Escrito igual dos dois lados de proposito: e o mesmo texto do
 // UNNAMED_CONTACT do servidor MCP.
@@ -6146,6 +6167,11 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			"success": true, "name": groupInfo.Name, "participants": participants,
 			"topic": groupInfo.Topic, "is_locked": groupInfo.IsLocked,
 			"is_announce": groupInfo.IsAnnounce,
+			// you_are_admin: a bool, never a JID -- a caller that needs to know "did
+			// our own account just get promoted here" (e.g. an onboarding flow gating
+			// on it) can read this without the ref/name redaction above having to
+			// leak anyone's number to get there.
+			"you_are_admin": youAreAdminIn(client, groupInfo),
 		})
 	})
 
